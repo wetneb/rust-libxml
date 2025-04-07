@@ -37,10 +37,20 @@ fn find_libxml2() -> Option<Vec<PathBuf>> {
   } else {    
     #[cfg(any(target_family = "unix", target_os = "macos"))]
     {
-      let lib = pkg_config::Config::new()
+      let env_var = std::env::var("BINDGEN_EXTRA_CLANG_ARGS_ARMHF").unwrap_or("undefined".to_owned());
+      println!("BINDGEN_EXTRA_CLANG_ARGS_ARMHF: {env_var}");
+      let env_var = std::env::var("BINDGEN_EXTRA_CLANG_ARGS_armhf").unwrap_or("undefined".to_owned());
+      println!("BINDGEN_EXTRA_CLANG_ARGS_armhf: {env_var}");
+      let libxml = pkg_config::Config::new()
         .probe("libxml-2.0")
         .expect("Couldn't find libxml2 via pkg-config");
-      return Some(lib.include_paths)
+      let libicu = pkg_config::Config::new()
+        .probe("icu-uc")
+        .expect("Couldn't find icu-uc via pkg-config");
+      return Some([
+        libxml.include_paths,
+       // libicu.include_paths,
+      ].into_iter().flatten().collect())
     }
 
     #[cfg(windows)]
@@ -55,16 +65,19 @@ fn find_libxml2() -> Option<Vec<PathBuf>> {
 }
 
 fn generate_bindings(header_dirs: Vec<PathBuf>, output_path: &Path) {
+  std::env::set_var("PKG_CONFIG_ALLOW_SYSTEM_CFLAGS", "1");
   let bindings = bindgen::Builder::default()
     .header("src/wrapper.h")
     // invalidate build as soon as the wrapper changes
     .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
     .layout_tests(true)
-    .clang_args(&["-DPKG-CONFIG"])
+    // .clang_args(&["-DPKG-CONFIG"])
+    // .clang_arg("-I/usr/lib/llvm-6.0/lib/clang/6.0.0/include/")
     .clang_args(
       header_dirs.iter()
         .map(|dir| format!("-I{}", dir.display()))
     );
+  println!("full bindgen invocation: {}", bindings.command_line_flags().join(" "));
   bindings
     .generate()
     .expect("failed to generate bindings with bindgen")
@@ -76,6 +89,7 @@ fn main() {
   let bindings_path = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("bindings.rs");
   if let Some(header_dirs) = find_libxml2() {
     // if we could find header files, generate fresh bindings from them
+    println!("all include paths: {}", header_dirs.iter().map(|dir| format!("{}", dir.display())).collect::<Vec<_>>().join(" "));
     generate_bindings(header_dirs, &bindings_path);
   } else {
     // otherwise, use the default bindings on platforms where pkg-config isn't available
