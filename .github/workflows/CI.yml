@@ -47,7 +47,7 @@ jobs:
           cd libxml2-${{ matrix.libxml_version }}
           ./configure
           make
-          make install
+          sudo make install
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
